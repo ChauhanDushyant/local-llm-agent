@@ -2,4 +2,5 @@ openai
 python-dotenv
 requests
 numpy
-chromadb
+chromadb==1.0.21
+chromadb==1.0.21

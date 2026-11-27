@@ -4,3 +4,7 @@ __pycache__/
 *.pyc
 .vscode/
 vector_store.json
+chromadbStorage/
+chat_history/
+chromadbStorage/
+vector_store.json

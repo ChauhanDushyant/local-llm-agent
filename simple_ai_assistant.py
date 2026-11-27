@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 # local modules
 from tools import TOOLS, run_tool
 from Utilities.utilities import log
+from memory import list_chats, load_chat, save_chat
 
 
 load_dotenv()
@@ -17,10 +18,9 @@ client = OpenAI(
     timeout=float(os.getenv("TIMEOUT", "120"))
 )
 
-messages = []
-
 MAX_STEPS = 5
-messages.append({
+
+SYSTEM_MESSAGE = {
     "role": "system",
     "content": (
         "You are a helpful, humble assistant for Zorvex Technologies employees. "
@@ -32,8 +32,12 @@ messages.append({
         "After the answer, cite the source like (leave_policy.txt #3). "
         "If the returned text does not contain the answer, say exactly: I could not find this in the knowledge base. "
         "Keep answers under 100 words."
-    )
-})
+    ),
+}
+
+messages = [SYSTEM_MESSAGE]
+chat_file_path = None
+
 
 def stream_chat(history):
     stream = client.chat.completions.create(
@@ -103,10 +107,83 @@ def build_tool_calls(tool_calls):
         payload.append(tool_call_dict)
     return payload
 
+
+# Print the saved chats as a numbered list
+def show_chats(chats):
+    chat_number = 1
+    for chat in chats:
+        title = chat["title"]
+        count = chat["count"]
+        updated = chat["updated"]
+
+        print(f"{chat_number}. {title} - {count} messages (Last updated: {updated})")
+        chat_number += 1
+
+
+# Before starting the chat, offer the user to resume the last message
+existing_chats = list_chats()
+
+if existing_chats:
+    last_chat = existing_chats[0]
+    answer = input(f"Continue your last chat \"{last_chat['title']}\"? (y/n): ")
+
+    if answer.strip().lower() == "y":
+        data = load_chat(last_chat["path"])
+        if data is not None:
+            messages = [SYSTEM_MESSAGE] + data["messages"]
+            chat_file_path = last_chat["path"]
+            print(f"Resumed: {last_chat['title']} ({len(data['messages'])} messages)")
+
+# chat loop start from here
 while True:
     user_input = input("Dushyant: ")
     if user_input.lower() in ["exit", "quit", "bye", "goodbye"]:
         break
+
+    # Now user can give commands like /new, /chats, /resume
+    command = user_input.strip().lower()
+
+    if command == "/new":
+        messages = [SYSTEM_MESSAGE]
+        chat_file_path = None
+        print("Started a new chat. The old one is still saved.")
+        continue
+
+    if command == "/chats":
+        chats = list_chats()
+        if chats:
+            show_chats(chats)
+        else:
+            print("No saved chats yet.")
+        continue
+
+    if command == "/resume":
+        chats = list_chats()
+        if not chats:
+            print("No chats to resume.")
+            continue
+
+        show_chats(chats)
+        choice = input("Enter the Chat number to resume (Press Enter to cancel): ")
+        choice = choice.strip()
+
+        if not choice:
+            continue
+
+        if not choice.isdigit() or not (1 <= int(choice) <= len(chats)):
+            print("Cancelled. Invalid Choice.")
+            continue
+
+        picked_chat = chats[int(choice) - 1]
+        data = load_chat(picked_chat["path"])
+        if data is None:
+            print("That chat could not be loaded.")
+            continue
+
+        messages = [SYSTEM_MESSAGE] + data["messages"]
+        chat_file_path = picked_chat["path"]
+        print(f"Resumed: {picked_chat['title']} ({len(data['messages'])} messages)")
+        continue
 
     checkpoint = len(messages)
     messages.append({
@@ -150,6 +227,8 @@ while True:
                 "content": fallback
             })
             print("Assistant: " + fallback)
+
+        chat_file_path = save_chat(chat_file_path, messages[1:])
 
     except Exception as e:
         del messages[checkpoint:]
